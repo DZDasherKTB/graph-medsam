@@ -8,23 +8,21 @@ class DiceLoss(nn.Module):
 
     def forward(self, logits, target):
         """
-        Args:
-            logits (torch.Tensor): (B, 1, D, H, W) - Raw output from MedSAM decoder
-            target (torch.Tensor): (B, 1, D, H, W) - Ground truth binary mask
-        Returns:
-            torch.Tensor: Scalar Dice loss
+        logits/target: (B, 1, D, H, W)
         """
-        # Apply sigmoid to convert logits to probabilities
+        B = logits.shape[0]
         probs = torch.sigmoid(logits)
         
-        # Flatten tensors for calculation
-        probs = probs.view(-1)
-        target = target.view(-1)
+        # Flatten per sample: (B, N)
+        probs = probs.view(B, -1)
+        target = target.view(B, -1)
 
-        intersection = (probs * target).sum()
-        denominator = probs.sum() + target.sum()
+        # Compute per-sample intersection and denominator
+        intersection = (probs * target).sum(dim=1)
+        denominator = probs.sum(dim=1) + target.sum(dim=1)
 
-        # Dice = 2 * |P ∩ G| / (|P| + |G|)
-        dice_score = (2. * intersection + self.smooth) / (denominator + self.smooth)
+        # Batch Dice scores
+        dice = (2. * intersection + self.smooth) / (denominator + self.smooth)
         
-        return 1. - dice_score
+        # Return average loss across the batch
+        return 1. - dice.mean()
