@@ -1,0 +1,17 @@
+model:
+  encoder_frozen_layers: 8
+  gnn_hidden_dim: 768
+  num_supervoxels: 150
+  gat_heads: 4
+
+loss_weights:
+  dice: 1.0
+  boundary: 0.5
+  geometry: 0.1
+  topology: 0.2
+
+training:
+  phase1_epochs: 20
+  phase2_epochs: 50
+  lr_graph: 1e-4
+  lr_encoder: 1e-5
