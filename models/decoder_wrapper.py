@@ -8,40 +8,50 @@ class MedSAMDecoderWrapper(nn.Module):
         self.decoder = medsam_decoder
         self.feat_dim = config['model']['embedding_dim']
         
-        # Determine grid dimensions from token count (2048 = 16 * 16 * 8)
-        # These should match the patch-grid used by the MedSAM ViT encoder
-        self.grid_d = 8
-        self.grid_h = 16
-        self.grid_w = 16
+        # Grid dimensions: 16*16*8 = 2048 tokens
+        self.grid_size = (8, 16, 16) 
 
     def forward(self, z_final, original_size):
         """
-        Args:
-            z_final (torch.Tensor): (B, 2048, 768) - Fused Graph-Visual tokens
-            original_size (tuple): (D, H, W) - Original input volume dimensions
-        Returns:
-            torch.Tensor: (B, 1, D, H, W) - Final segmentation logits
+        z_final: (B, 2048, 768)
+        original_size: (D, H, W)
         """
         B, N, C = z_final.shape
 
-        # 1. Reshape flat tokens back to a 3D feature volume
+        # 1. Reshape to 3D Spatial Feature Map
         # (B, 2048, 768) -> (B, 768, 8, 16, 16)
-        x = z_final.transpose(1, 2).view(B, C, self.grid_d, self.grid_h, self.grid_w)
+        x = z_final.transpose(1, 2).view(B, C, *self.grid_size)
 
-        # 2. Pass through the MedSAM Mask Decoder
-        # Note: MedSAM's decoder usually expects image embeddings and 
-        # potentially sparse/dense prompt embeddings (which we keep empty 
-        # or use as default learnable queries in the base MedSAM).
+        # 2. Reconstruct Positional Encodings (Issue 2 Fix)
+        # Most MedSAM/SAM decoders have a pe_layer to generate 3D spatial priors
+        # We generate the PE for the current grid size (8, 16, 16)
+        image_pe = self.decoder.pe_layer(self.grid_size).unsqueeze(0).expand(B, -1, -1, -1, -1)
+
+        # 3. Handle Prompt Embeddings (Issue 3 Fix)
+        # We use the decoder's default learnable 'not-a-point' or 'empty' tokens
+        # to maintain the expected input format without manual zero-tensors.
+        sparse_embeddings, dense_embeddings = self.decoder.prompt_encoder(
+            points=None,
+            boxes=None,
+            masks=None,
+        )
+
+        # 4. Decoder Pass
+        # low_res_masks shape: (B, num_masks, d, h, w)
         low_res_masks, iou_predictions = self.decoder(
             image_embeddings=x,
-            image_pe=None,        # Positional encodings are usually baked or passed here
-            sparse_prompt_embeddings=None,
-            dense_prompt_embeddings=None,
+            image_pe=image_pe,
+            sparse_prompt_embeddings=sparse_embeddings,
+            dense_prompt_embeddings=dense_embeddings,
             multimask_output=False,
         )
 
-        # 3. Upsample to original volume resolution
-        # MedSAM outputs at a lower resolution (e.g., 1/4 of input)
+        # 5. Output Selection & Upsampling (Issue 4 Fix)
+        # Select the first mask (index 0) if multimask_output is False
+        # Resulting shape: (B, 1, d, h, w)
+        if low_res_masks.shape[1] > 1:
+            low_res_masks = low_res_masks[:, 0:1, :, :, :]
+
         final_logits = F.interpolate(
             low_res_masks,
             size=original_size,
