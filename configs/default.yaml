@@ -4,7 +4,7 @@ model:
   encoder_frozen_layers: 8
   embedding_dim: 768         # Standard for ViT-B
   num_tokens: 2048           # MedSAM output tokens
-  num_supervoxels: 150       # K-clusters for graph nodes
+  num_supervoxels: 125      # K-clusters for graph nodes
   gnn_hidden_dim: 768
   gat_heads: 4
   dropout: 0.1
