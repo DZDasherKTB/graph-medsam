@@ -2,6 +2,7 @@ import torch
 import torch.optim as optim
 from tqdm import tqdm
 import os
+import matplotlib.pyplot as plt
 
 
 class VesselTrainer:
@@ -13,6 +14,7 @@ class VesselTrainer:
         self.val_loader = val_loader
         self.config = config
 
+        # Device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -25,24 +27,39 @@ class VesselTrainer:
         # Training state
         self.current_phase = 1
 
-        # Checkpoint management
+        # Checkpoint setup
         self.checkpoint_dir = "checkpoints"
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+
         self.best_val = float("inf")
 
+        # Early stopping
+        self.patience = 8
+        self.no_improve = 0
+
+        # Logging
+        self.train_losses = []
+        self.val_losses = []
+
+        # Optimizer
         self.setup_optimizer()
 
 
+    # ---------------------------------------------------------
+    # Optimizer setup with dynamic freezing
+    # ---------------------------------------------------------
     def setup_optimizer(self):
 
         params = []
 
         # -------- Encoder --------
         if self.current_phase <= 2:
+
             for p in self.model.encoder.parameters():
                 p.requires_grad = False
 
         else:
+
             for i, block in enumerate(self.model.encoder.blocks):
 
                 trainable = (
@@ -64,6 +81,7 @@ class VesselTrainer:
             p.requires_grad = graph_active
 
         if graph_active:
+
             params.append({
                 "params": self.model.graph_module.parameters(),
                 "lr": float(self.config["training"]["lr_graph"])
@@ -82,6 +100,9 @@ class VesselTrainer:
         )
 
 
+    # ---------------------------------------------------------
+    # Loss computation
+    # ---------------------------------------------------------
     def compute_loss(self, logits, target, sdf, epoch):
 
         weights = self.config["loss_weights"]
@@ -103,8 +124,7 @@ class VesselTrainer:
         )
 
         losses["topology"] = (
-            self.topology_loss(logits, target, current_epoch=epoch)
-            * weights["topology"]
+            self.topology_loss(logits, target, current_epoch=epoch) * weights["topology"]
             if self.current_phase >= 4
             else torch.tensor(0.0, device=self.device)
         )
@@ -114,13 +134,19 @@ class VesselTrainer:
         return total_loss, losses
 
 
+    # ---------------------------------------------------------
+    # Training step
+    # ---------------------------------------------------------
     def train_epoch(self, epoch):
 
         self.model.train()
 
         self.update_phase(epoch)
 
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch} [Phase {self.current_phase}]")
+        total_loss = 0
+
+        pbar = tqdm(self.train_loader,
+                    desc=f"Epoch {epoch} [Phase {self.current_phase}]")
 
         for batch in pbar:
 
@@ -141,19 +167,31 @@ class VesselTrainer:
 
             self.optimizer.step()
 
+            total_loss += loss.item()
+
             pbar.set_postfix({
-                "L": f"{loss.item():.3f}",
-                "D": f"{loss_dict['dice'].item():.3f}",
-                "G": f"{self.model.fusion.gamma.item():.3f}"
+                "loss": f"{loss.item():.3f}",
+                "dice": f"{loss_dict['dice'].item():.3f}",
+                "gamma": f"{self.model.fusion.gamma.item():.3f}",
+                "phase": self.current_phase
             })
 
-        # Save latest checkpoint
+        avg_loss = total_loss / len(self.train_loader)
+
+        self.train_losses.append(avg_loss)
+
+        # Save last checkpoint
         torch.save(
             self.model.state_dict(),
             os.path.join(self.checkpoint_dir, "last_model.pth")
         )
 
+        return avg_loss
 
+
+    # ---------------------------------------------------------
+    # Validation
+    # ---------------------------------------------------------
     def validate(self):
 
         if self.val_loader is None:
@@ -178,9 +216,16 @@ class VesselTrainer:
 
                 total_loss += loss.item()
 
-        return total_loss / len(self.val_loader)
+        val_loss = total_loss / len(self.val_loader)
+
+        self.val_losses.append(val_loss)
+
+        return val_loss
 
 
+    # ---------------------------------------------------------
+    # Save best model
+    # ---------------------------------------------------------
     def save_best(self, val_loss):
 
         if val_loss is None:
@@ -189,6 +234,7 @@ class VesselTrainer:
         if val_loss < self.best_val:
 
             self.best_val = val_loss
+            self.no_improve = 0
 
             torch.save(
                 self.model.state_dict(),
@@ -197,22 +243,8 @@ class VesselTrainer:
 
             print("Saved best model")
 
+            self.plot_training()
 
-    def update_phase(self, epoch):
-
-        prev_phase = self.current_phase
-
-        if epoch < 10:
-            self.current_phase = 1
-        elif epoch < 25:
-            self.current_phase = 2
-        elif epoch < 60:
-            self.current_phase = 3
         else:
-            self.current_phase = 4
 
-        if self.current_phase != prev_phase:
-
-            print(f"\n>>> Transitioning to Phase {self.current_phase}")
-
-            self.setup_optimizer()
+            self.no_improve += 1
