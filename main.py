@@ -5,7 +5,7 @@ import yaml
 from segment_anything import sam_model_registry
 
 # Model
-from model import GraphMedSAM
+from models.graph_medsam import GraphMedSAM
 
 # Dataset
 from datasets.dataset_loader import MedicalDataset
@@ -19,7 +19,16 @@ from losses.dice_loss import DiceLoss
 from losses.boundary_loss import BoundaryLoss
 from losses.geometry_loss import GeometryLoss
 from losses.topology_loss import TopologyLoss
+import glob
 
+def load_vessel12():
+
+    imgs = sorted(glob.glob("data/vessel12/images/*.nii.gz"))
+    masks = sorted(glob.glob("data/vessel12/masks/*.nii.gz"))
+
+    print("Loaded scans:", len(imgs))
+
+    return imgs, masks
 
 def load_config(path="configs/default.yaml"):
     with open(path, "r") as f:

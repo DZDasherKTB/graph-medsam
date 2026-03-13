@@ -1,0 +1,44 @@
+# Core deep learning
+torch>=2.2
+torchvision
+torchaudio
+
+# Graph neural networks (PyTorch Geometric)
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv
+torch-geometric
+
+# SAM / MedSAM
+segment-anything
+
+# Numerical / scientific computing
+numpy
+scipy
+
+# Medical imaging
+nibabel
+SimpleITK
+
+# Data handling
+pyyaml
+tqdm
+
+# Image processing
+scikit-image
+opencv-python
+
+# Visualization
+matplotlib
+seaborn
+
+# Utilities
+pandas
+scikit-learn
+
+# Optional debugging / experimentation
+ipython
+jupyter
+
+#powershell -ExecutionPolicy Bypass -File setup.ps1
