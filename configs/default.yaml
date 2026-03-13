@@ -1,20 +1,16 @@
 project_name: "Graph-MedSAM-Vessel"
 
 model:
+  embedding_dim: 768
+  num_supervoxels: 125        # 5×5×5 spatial anchors
   encoder_frozen_layers: 8
-  embedding_dim: 768         # Standard for ViT-B
-  num_tokens: 2048           # MedSAM output tokens
-  num_supervoxels: 125      # K-clusters for graph nodes
-  gnn_hidden_dim: 768
-  gat_heads: 4
-  dropout: 0.1
+  medsam_checkpoint: "weights/medsam_vit_b.pth"
 
 graph:
-  # Parameters for Wij calculation
-  sigma_f: 1.0               # Feature similarity scale
-  sigma_s: 1.0               # Spatial proximity scale
-  lambda_f: 1.0              # Weight for feature distance in clustering
-  lambda_s: 0.5              # Weight for spatial distance in clustering
+  sigma_f: 1.0
+  sigma_s: 1.0
+  lambda_f: 1.0
+  lambda_s: 0.5
 
 loss_weights:
   dice: 1.0
@@ -23,14 +19,20 @@ loss_weights:
   topology: 0.2
 
 training:
-  batch_size: 2              # 3D volumes are memory intensive
-  phase1_epochs: 20
-  phase2_epochs: 50
-  lr_graph: 0.0001
-  lr_encoder: 0.00001
-  lr_decoder: 0.0001
-  weight_decay: 0.01
+  batch_size: 2
+  epochs: 100
+  lr_graph: 1e-4
+  lr_encoder: 1e-5
+  lr_decoder: 1e-4
+  weight_decay: 1e-2
+  num_workers: 4
 
 dataset:
+  train_images: []
+  train_masks: []
+
+  val_images: []
+  val_masks: []
+
   patch_size: [128, 128, 128]
   input_channels: 1
